@@ -662,7 +662,8 @@ class _MeasurementEditorScreenState extends State<MeasurementEditorScreen> {
           minChildSize: peek,
           maxChildSize: 0.92,
           snap: true,
-          snapSizes: [_sheetMid],
+          // const: list mới mỗi lần build làm sheet tự snap lại, cắt ngang thao tác kéo / cuộn.
+          snapSizes: const [_sheetMid],
           builder: (context, scroll) => Container(
             decoration: const BoxDecoration(
               color: AppColors.surface,
