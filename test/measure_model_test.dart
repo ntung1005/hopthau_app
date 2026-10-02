@@ -83,4 +83,37 @@ void main() {
     expect(ViewAngle.initial.copyWith(pitch: -1, zoom: 0).pitch, 0.2);
     expect(ViewAngle.initial.copyWith(zoom: 0).zoom, 0.5);
   });
+
+  test('đồ cần làm: json đi rồi về, ghi chú trống bỏ đi, đếm theo số lượng', () {
+    final plan = planTemplates.values.first();
+    plan.rooms[0].items.addAll([Item('Kệ tivi', note: ' '), Item('Tủ giày', qty: 2, note: '1m2')]);
+    plan.rooms[1].items.add(Item('Giường'));
+    final back = Plan.fromJson(plan.toJson());
+    expect(back.rooms[0].items.map((i) => i.toJson()).toList(), [
+      {'name': 'Kệ tivi', 'qty': 1},
+      {'name': 'Tủ giày', 'qty': 2, 'note': '1m2'},
+    ]);
+    expect(back.itemCount, 4);
+  });
+
+  test('so báo giá theo món với đồ chủ nhà chọn: thêm, đổi số lượng, bỏ', () {
+    final asked = [
+      {'room': 'PN', 'name': 'Giường', 'qty': 1, 'note': null},
+      {'room': 'PN', 'name': 'Tủ', 'qty': 1, 'note': null},
+      {'room': 'Khách', 'name': 'Kệ tivi', 'qty': 1, 'note': null},
+    ];
+    final lines = quoteDiff(asked, [
+      {'room': 'PN', 'name': 'Giường', 'qty': 1, 'unit_price': 5},
+      {'room': 'PN', 'name': 'Tủ', 'qty': 2, 'unit_price': 7},
+      {'room': 'Chung', 'name': 'Nhân công', 'qty': 1, 'unit_price': 3},
+    ]);
+    expect([
+      for (final l in lines) (l.name, l.tag, l.askedQty)
+    ], [
+      ('Giường', null, 1),
+      ('Tủ', 'changed', 1),
+      ('Nhân công', 'added', null),
+      ('Kệ tivi', 'removed', 1),
+    ]);
+  });
 }

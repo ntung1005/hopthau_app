@@ -120,7 +120,8 @@ class JobCard extends StatelessWidget {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(jobPlace(job), style: Theme.of(context).textTheme.titleMedium),
-                  Text('$other · ${vnd(job['total'] as num)}', style: const TextStyle(color: AppColors.muted)),
+                  Text('$other · ${job['offline'] == true ? 'Làm việc trực tiếp' : vnd(job['total'] as num)}',
+                      style: const TextStyle(color: AppColors.muted)),
                 ]),
               ),
               Pill(label, color: color),
@@ -231,7 +232,7 @@ class _JobScreenState extends State<JobScreen> {
       builder: (context) => AlertDialog(
         title: Text('Nghiệm thu "${m['title']}"?'),
         content: Text('Xác nhận phần việc này đã xong như cam kết. '
-            'Sau đó thanh toán ${vnd(m['amount'] as num)} cho nhà thầu theo thoả thuận.'),
+            '${m['amount'] == null ? 'Thanh toán theo thoả thuận trực tiếp với nhà thầu.' : 'Sau đó thanh toán ${vnd(m['amount'] as num)} cho nhà thầu theo thoả thuận.'}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Để sau')),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Nghiệm thu')),
@@ -295,7 +296,7 @@ class _JobScreenState extends State<JobScreen> {
                         OutlinedButton(
                             onPressed: _busy ? null : () => _rejectMilestone(m), child: const Text('Trả lại, cần sửa')),
                       ],
-                      if (!isOwner && m['status'] == 'approved' && m['paid_at'] == null)
+                      if (!isOwner && m['status'] == 'approved' && m['paid_at'] == null && m['amount'] != null)
                         OutlinedButton(
                           onPressed:
                               _busy ? null : () => _run(() => api.postAuth('/jobs/milestones/${m['id']}/paid'), 'Đã ghi nhận'),
@@ -303,24 +304,27 @@ class _JobScreenState extends State<JobScreen> {
                         ),
                     ],
                   ),
-                SectionTitle('Phát sinh (${changes.length})'),
-                const Text('Mọi thay đổi giá hoặc thời gian chỉ có hiệu lực khi chủ nhà đồng ý trong app.',
-                    style: TextStyle(color: AppColors.muted, fontSize: 13)),
-                const SizedBox(height: 8),
-                for (final c in changes)
-                  _ChangeCard(
-                    change: c,
-                    onDecide: isOwner && c['status'] == 'pending' && !_busy
-                        ? (approve) => _run(() => api.postAuth('/jobs/changes/${c['id']}/decide', {'approve': approve}),
-                            approve ? 'Đã đồng ý phát sinh' : 'Đã từ chối phát sinh')
-                        : null,
-                  ),
-                if (!isOwner && active)
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _proposeChange,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Đề nghị phát sinh'),
-                  ),
+                // Làm việc trực tiếp: giá và phát sinh thoả thuận bên ngoài, app chỉ theo dõi mốc.
+                if (job['offline'] != true) ...[
+                  SectionTitle('Phát sinh (${changes.length})'),
+                  const Text('Mọi thay đổi giá hoặc thời gian chỉ có hiệu lực khi chủ nhà đồng ý trong app.',
+                      style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  for (final c in changes)
+                    _ChangeCard(
+                      change: c,
+                      onDecide: isOwner && c['status'] == 'pending' && !_busy
+                          ? (approve) => _run(() => api.postAuth('/jobs/changes/${c['id']}/decide', {'approve': approve}),
+                              approve ? 'Đã đồng ý phát sinh' : 'Đã từ chối phát sinh')
+                          : null,
+                    ),
+                  if (!isOwner && active)
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _proposeChange,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Đề nghị phát sinh'),
+                    ),
+                ],
                 if (job['status'] == 'completed') ...[
                   const SectionTitle('Đánh giá'),
                   if (review != null)
@@ -347,6 +351,20 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (job['offline'] == true) {
+      return InfoPanel(children: [
+        const Pill('Làm việc trực tiếp', color: AppColors.accent),
+        const SizedBox(height: 8),
+        const Text(
+            'Giá và thanh toán do hai bên thoả thuận bên ngoài. App theo dõi tiến độ các mốc: nhà thầu báo xong kèm ảnh, '
+            'chủ nhà nghiệm thu.',
+            style: TextStyle(color: AppColors.muted, fontSize: 13)),
+        if (job['warranty_until'] != null) ...[
+          const SizedBox(height: 6),
+          Text('Bảo hành đến ${vnDate(job['warranty_until'] as String)}', style: const TextStyle(color: AppColors.success)),
+        ],
+      ]);
+    }
     final total = job['total'] as num;
     final paid = job['paid_amount'] as num;
     final approved = job['approved_amount'] as num;
@@ -418,7 +436,7 @@ class _MilestoneTile extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text('${m['title']}', style: Theme.of(context).textTheme.titleMedium)),
-                Text(vnd(m['amount'] as num), style: const TextStyle(fontWeight: FontWeight.w600)),
+                if (m['amount'] != null) Text(vnd(m['amount'] as num), style: const TextStyle(fontWeight: FontWeight.w600)),
               ]),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 6, children: [

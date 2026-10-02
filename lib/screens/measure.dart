@@ -345,13 +345,11 @@ class _Summary extends StatelessWidget {
             Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
           ]),
         );
-    final doors = plan.rooms.fold<int>(0, (s, r) => s + r.openings.where((o) => o.isDoor).length);
-    final windows = plan.rooms.fold<int>(0, (s, r) => s + r.openings.where((o) => !o.isDoor).length);
     return Row(children: [
       stat('${plan.rooms.length}', 'phòng'),
       stat('${_m(plan.floorArea)} m²', 'sàn'),
       stat('${_m(plan.wallArea)} m²', 'tường (trừ cửa)'),
-      stat('$doors · $windows', 'cửa đi · sổ'),
+      stat('${plan.itemCount}', 'món đồ'),
     ]);
   }
 }
@@ -395,6 +393,17 @@ class _MeasurementEditorScreenState extends State<MeasurementEditorScreen> {
   var _dirty = false;
   var _busy = false;
 
+  // Drawer thông số trên điện thoại: mở sẵn ở giữa, kéo xuống còn dải chọn phòng.
+  static const _sheetMid = 0.45;
+  final _sheet = DraggableScrollableController();
+  var _sheetExtent = _sheetMid;
+
+  @override
+  void dispose() {
+    _sheet.dispose();
+    super.dispose();
+  }
+
   Room? get _room => _plan.rooms.where((r) => r.id == _selected).firstOrNull;
 
   void _changed() => setState(() => _dirty = true);
@@ -419,6 +428,22 @@ class _MeasurementEditorScreenState extends State<MeasurementEditorScreen> {
   }
 
   Future<void> _send() async {
+    // Nhà thầu báo giá theo món, nên phải biết chủ nhà muốn làm những gì.
+    if (_plan.itemCount == 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Chọn đồ cần làm trước'),
+          content: const Text('Ở mỗi phòng, chọn các món muốn đóng / lắp (giường, tủ, kệ, bàn làm việc...) '
+              'để nhà thầu báo giá sát hơn.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Chọn đồ'))],
+        ),
+      );
+      if (_sheet.isAttached && _sheet.size < _sheetMid) {
+        _sheet.animateTo(_sheetMid, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      }
+      return;
+    }
     if (_dirty || _saved == null) await _save();
     if (_saved == null || !mounted) return;
     await Navigator.push(
@@ -526,6 +551,141 @@ class _MeasurementEditorScreenState extends State<MeasurementEditorScreen> {
     });
   }
 
+  void _select(String? id) {
+    setState(() => _selected = id ?? _selected);
+    // Chạm vào phòng khi drawer đang thu nhỏ: mở lên để sửa ngay.
+    if (id != null && _sheet.isAttached && _sheet.size < _sheetMid - 0.05) {
+      _sheet.animateTo(_sheetMid, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  /// Bản vẽ + nút 2D / 3D + gợi ý, giãn theo chỗ còn trống.
+  Widget _drawing() => Column(children: [
+        _ViewToggle(threeD: _threeD, onChanged: (v) => setState(() => _threeD = v)),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(AppRadius.card),
+            ),
+            child: LayoutBuilder(
+              builder: (context, c) => PlanCanvas(
+                plan: _plan,
+                threeD: _threeD,
+                selectedId: _selected,
+                height: c.maxHeight,
+                onSelect: _select,
+                onChanged: _changed,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+              _threeD ? 'Tường phía trước cắt thấp để nhìn vào trong; kéo để xoay.' : 'Chạm để chọn phòng, kéo để xếp phòng.',
+              style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+        ),
+      ]);
+
+  /// Thông số: chọn phòng, tổng diện tích, số đo của phòng đang chọn.
+  List<Widget> _controls(Room? r) => [
+        SizedBox(
+          height: 44,
+          child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (final room in _plan.rooms)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(room.name),
+                  selected: room.id == _selected,
+                  onSelected: (_) => setState(() => _selected = room.id),
+                  avatar: CircleAvatar(backgroundColor: roomColor(room.type), radius: 8),
+                ),
+              ),
+            ActionChip(avatar: const Icon(Icons.add, size: 18), label: const Text('Thêm phòng'), onPressed: _addRoom),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: _Summary(_plan))),
+        if (r != null)
+          _RoomPanel(
+            key: ValueKey(r.id),
+            room: r,
+            onChanged: _changed,
+            onEditOpening: (o) => _editOpening(r, o),
+            onEditCut: (c) => _editCut(r, c),
+            onDelete: _plan.rooms.length <= 1
+                ? null
+                : () => setState(() {
+                      _plan.rooms.remove(r);
+                      _selected = _plan.rooms.first.id;
+                      _dirty = true;
+                    }),
+          ),
+      ];
+
+  /// Màn rộng (web, tablet ngang): bản vẽ bên trái, thông số bên phải.
+  Widget _wide(Room? r) => Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), child: _drawing())),
+        Container(
+          width: 400,
+          decoration: const BoxDecoration(border: Border(left: BorderSide(color: AppColors.border))),
+          child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: _controls(r)),
+        ),
+      ]);
+
+  /// Màn hẹp (điện thoại): bản vẽ phía trên, thông số trong drawer kéo lên / xuống.
+  /// Bản vẽ co theo drawer (tới 60% màn) để phòng đang sửa luôn nhìn thấy.
+  Widget _narrow(Room? r, double height) {
+    final peek = (110 / height).clamp(0.1, 0.4);
+    final covered = _sheetExtent.clamp(peek, 0.6);
+    return Stack(children: [
+      Positioned(
+        left: 16,
+        right: 16,
+        top: 0,
+        height: height * (1 - covered) - 8,
+        child: _drawing(),
+      ),
+      NotificationListener<DraggableScrollableNotification>(
+        onNotification: (n) {
+          setState(() => _sheetExtent = n.extent);
+          return false;
+        },
+        child: DraggableScrollableSheet(
+          controller: _sheet,
+          initialChildSize: _sheetMid,
+          minChildSize: peek,
+          maxChildSize: 0.92,
+          snap: true,
+          snapSizes: [_sheetMid],
+          builder: (context, scroll) => Container(
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 16, offset: Offset(0, -4))],
+            ),
+            child: ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              ..._controls(r),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = _room;
@@ -554,67 +714,8 @@ class _MeasurementEditorScreenState extends State<MeasurementEditorScreen> {
             if (_saved != null) IconButton(tooltip: 'Xoá bản đo', icon: const Icon(Icons.delete_outline), onPressed: _delete),
           ],
         ),
-        body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 150), children: [
-          _ViewToggle(threeD: _threeD, onChanged: (v) => setState(() => _threeD = v)),
-          const SizedBox(height: 12),
-          Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(AppRadius.card),
-            ),
-            child: PlanCanvas(
-              plan: _plan,
-              threeD: _threeD,
-              selectedId: _selected,
-              onSelect: (id) => setState(() => _selected = id ?? _selected),
-              onChanged: _changed,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-                _threeD
-                    ? 'Khung dựng từ số đo. Tường phía trước cắt thấp để nhìn vào trong; kéo để xoay.'
-                    : 'Chạm để chọn phòng, kéo để xếp phòng.',
-                style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-          ),
-          Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: _Summary(_plan))),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 44,
-            child: ListView(scrollDirection: Axis.horizontal, children: [
-              for (final room in _plan.rooms)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(room.name),
-                    selected: room.id == _selected,
-                    onSelected: (_) => setState(() => _selected = room.id),
-                    avatar: CircleAvatar(backgroundColor: roomColor(room.type), radius: 8),
-                  ),
-                ),
-              ActionChip(avatar: const Icon(Icons.add, size: 18), label: const Text('Thêm phòng'), onPressed: _addRoom),
-            ]),
-          ),
-          if (r != null)
-            _RoomPanel(
-              key: ValueKey(r.id),
-              room: r,
-              onChanged: _changed,
-              onEditOpening: (o) => _editOpening(r, o),
-              onEditCut: (c) => _editCut(r, c),
-              onDelete: _plan.rooms.length <= 1
-                  ? null
-                  : () => setState(() {
-                        _plan.rooms.remove(r);
-                        _selected = _plan.rooms.first.id;
-                        _dirty = true;
-                      }),
-            ),
-        ]),
-        bottomSheet: Container(
+        body: LayoutBuilder(builder: (context, c) => c.maxWidth >= 840 ? _wide(r) : _narrow(r, c.maxHeight)),
+        bottomNavigationBar: Container(
           decoration: const BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
@@ -662,6 +763,46 @@ class _RoomPanel extends StatelessWidget {
   final void Function(Opening? existing) onEditOpening;
   final void Function(CornerCut? existing) onEditCut;
   final VoidCallback? onDelete;
+
+  /// Thêm món khác (không có [existing]) hoặc sửa tên, ghi chú của một món.
+  Future<void> _editItem(BuildContext context, [Item? existing]) async {
+    final name = TextEditingController(text: existing?.name);
+    final note = TextEditingController(text: existing?.note);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existing == null ? 'Thêm món' : 'Sửa món'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: name,
+            autofocus: existing == null,
+            maxLength: 50,
+            decoration: const InputDecoration(labelText: 'Tên món', hintText: 'Ví dụ: Tủ âm tường'),
+          ),
+          TextField(
+            controller: note,
+            autofocus: existing != null,
+            maxLength: 100,
+            decoration: const InputDecoration(labelText: 'Ghi chú', hintText: 'Kích thước, vật liệu, màu...'),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Huỷ')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lưu')),
+        ],
+      ),
+    );
+    final n = name.text.trim(), t = note.text.trim();
+    if (ok != true || n.isEmpty) return;
+    if (existing == null) {
+      room.items.add(Item(n, note: t.isEmpty ? null : t));
+    } else {
+      existing
+        ..name = n
+        ..note = t.isEmpty ? null : t;
+    }
+    onChanged();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -736,7 +877,56 @@ class _RoomPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Text('Sàn ${_m(r.floorArea)} m² · chu vi ${_m(r.perimeter)} m · tường ${_m(r.wallArea)} m²',
               style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-          const SizedBox(height: 12),
+          const Divider(height: 28),
+          Text('Đồ cần làm (${r.items.length})', style: Theme.of(context).textTheme.titleSmall),
+          const Text('Chọn món muốn đóng / lắp để nhà thầu báo giá theo từng món. Chạm vào món để ghi kích thước, vật liệu.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final name in furnitureSuggestions[r.type] ?? furnitureSuggestions['other']!)
+              FilterChip(
+                label: Text(name),
+                selected: r.items.any((i) => i.name == name),
+                onSelected: (on) {
+                  on ? r.items.add(Item(name)) : r.items.removeWhere((i) => i.name == name);
+                  onChanged();
+                },
+              ),
+            if (r.items.length < 30)
+              ActionChip(
+                  avatar: const Icon(Icons.add, size: 18), label: const Text('Món khác'), onPressed: () => _editItem(context)),
+          ]),
+          for (final i in r.items)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.chair_outlined, color: AppColors.primary),
+              title: Text(i.name),
+              subtitle: Text(i.note ?? 'Thêm kích thước, vật liệu...',
+                  style: TextStyle(color: i.note == null ? AppColors.muted : null, fontSize: 13)),
+              onTap: () => _editItem(context, i),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: i.qty > 1 ? 'Bớt' : 'Bỏ món',
+                  icon: Icon(i.qty > 1 ? Icons.remove_circle_outline : Icons.delete_outline),
+                  onPressed: () {
+                    i.qty > 1 ? i.qty-- : r.items.remove(i);
+                    onChanged();
+                  },
+                ),
+                Text('${i.qty}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                IconButton(
+                  tooltip: 'Thêm',
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: i.qty >= 20
+                      ? null
+                      : () {
+                          i.qty++;
+                          onChanged();
+                        },
+                ),
+              ]),
+            ),
+          const Divider(height: 28),
           Text('Góc phòng', style: Theme.of(context).textTheme.titleSmall),
           const Text('Góc có cột, hộp kỹ thuật hoặc bị vát thì cắt bớt để diện tích đúng thực tế.',
               style: TextStyle(color: AppColors.muted, fontSize: 12)),
@@ -1079,6 +1269,23 @@ class _MeasurementViewerScreenState extends State<MeasurementViewerScreen> {
               ),
               const SizedBox(height: 12),
               Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: _Summary(plan))),
+              if (plan.itemCount > 0) ...[
+                const SectionTitle('Đồ khách muốn làm'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      for (final room in plan.rooms.where((r) => r.items.isNotEmpty)) ...[
+                        const SizedBox(height: 10),
+                        Text(room.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        for (final i in room.items)
+                          Text('• ${i.name} × ${i.qty}${i.note == null ? '' : ' (${i.note})'}',
+                              style: const TextStyle(color: AppColors.muted)),
+                      ],
+                    ]),
+                  ),
+                ),
+              ],
               const SectionTitle('Khối lượng từng phòng'),
               Card(
                 clipBehavior: Clip.antiAlias,

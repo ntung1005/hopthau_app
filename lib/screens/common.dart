@@ -192,3 +192,43 @@ class FromPrice extends StatelessWidget {
           Text(vndShort(price!), style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
         ]);
 }
+
+/// Chọn nhiều giá trị trong danh sách cố định bằng chip (tỉnh / thành, hạng mục).
+class ChipPicker extends StatelessWidget {
+  const ChipPicker({super.key, required this.label, required this.options, required this.selected, required this.onChanged});
+
+  final String label;
+  final List<String> options;
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final o in options)
+            FilterChip(
+              label: Text(o),
+              selected: selected.contains(o),
+              onSelected: (on) => onChanged(on ? {...selected, o} : ({...selected}..remove(o))),
+            ),
+        ]),
+      ]);
+}
+
+/// Nơi của yêu cầu: dự án · mẫu căn, hoặc địa chỉ + tỉnh / thành.
+String requestPlace(Map<String, dynamic> r, {bool withArea = false}) {
+  final unit = r['unit_type'] as Map<String, dynamic>?;
+  if (unit != null) {
+    final area = withArea && unit['area_m2'] != null ? ' (${vnDecimal(unit['area_m2'])} m²)' : '';
+    return '${unit['project']['name']} · ${unit['name']}$area';
+  }
+  return [r['address'], r['province']].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+}
+
+/// "Cần làm: Tủ bếp, Sơn bả", rỗng khi chủ nhà không chọn hạng mục.
+String servicesLine(Map<String, dynamic> r, [String prefix = 'Cần làm']) {
+  final s = (r['services'] as List?)?.cast<String>() ?? const [];
+  return s.isEmpty ? '' : '$prefix: ${s.join(', ')}';
+}

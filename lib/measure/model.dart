@@ -13,6 +13,30 @@ const roomTypes = {
   'other': 'Khác',
 };
 
+/// Gợi ý đồ cần làm theo loại phòng; chủ nhà vẫn thêm được món khác.
+const furnitureSuggestions = {
+  'living': ['Kệ tivi', 'Sofa', 'Bàn trà', 'Tủ giày', 'Tủ trang trí', 'Bàn ăn + ghế'],
+  'bedroom': ['Giường', 'Tủ quần áo', 'Bàn làm việc', 'Bàn trang điểm', 'Kệ sách', 'Tab đầu giường'],
+  'kitchen': ['Tủ bếp trên + dưới', 'Bàn ăn + ghế', 'Kệ gia vị', 'Tủ lạnh âm tủ'],
+  'bathroom': ['Tủ lavabo', 'Gương', 'Kệ để đồ', 'Vách kính tắm'],
+  'balcony': ['Tủ / kệ để đồ', 'Giàn phơi', 'Chậu rửa'],
+  'other': ['Tủ', 'Kệ', 'Bàn làm việc', 'Giường gấp'],
+};
+
+/// Một món đồ chủ nhà muốn làm trong phòng; [note]: kích thước, vật liệu, yêu cầu riêng.
+class Item {
+  Item(this.name, {this.qty = 1, this.note});
+
+  factory Item.fromJson(Map<String, dynamic> j) =>
+      Item(j['name'] as String, qty: (j['qty'] as num? ?? 1).toInt(), note: j['note'] as String?);
+
+  String name;
+  int qty;
+  String? note;
+
+  Map<String, dynamic> toJson() => {'name': name, 'qty': qty, if (note?.trim().isNotEmpty ?? false) 'note': note!.trim()};
+}
+
 const wallNames = {'n': 'Tường trên', 'e': 'Tường phải', 's': 'Tường dưới', 'w': 'Tường trái'};
 
 const cornerNames = {'nw': 'Góc trên trái', 'ne': 'Góc trên phải', 'se': 'Góc dưới phải', 'sw': 'Góc dưới trái'};
@@ -104,8 +128,10 @@ class Room {
     this.h = 2.8,
     List<Opening>? openings,
     List<CornerCut>? cuts,
+    List<Item>? items,
   })  : openings = openings ?? [],
-        cuts = cuts ?? [];
+        cuts = cuts ?? [],
+        items = items ?? [];
 
   factory Room.fromJson(Map<String, dynamic> j) => Room(
         id: j['id'] as String,
@@ -118,6 +144,7 @@ class Room {
         h: (j['h'] as num? ?? 2.8).toDouble(),
         openings: [for (final o in (j['openings'] as List? ?? const [])) Opening.fromJson(o as Map<String, dynamic>)],
         cuts: [for (final c in (j['cuts'] as List? ?? const [])) CornerCut.fromJson(c as Map<String, dynamic>)],
+        items: [for (final i in (j['items'] as List? ?? const [])) Item.fromJson(i as Map<String, dynamic>)],
       );
 
   String id;
@@ -130,6 +157,7 @@ class Room {
   double h;
   List<Opening> openings;
   List<CornerCut> cuts;
+  List<Item> items;
 
   double wallLength(String wall) => wall == 'n' || wall == 's' ? w : l;
 
@@ -216,6 +244,7 @@ class Room {
         'h': _r2(h),
         'openings': [for (final o in openings) o.toJson()],
         'cuts': [for (final c in cuts) c.toJson()],
+        'items': [for (final i in items) i.toJson()],
       };
 
   Room copy() => Room.fromJson(toJson());
@@ -242,6 +271,15 @@ class Plan {
       rooms.map((r) => r.y + r.l).reduce(math.max),
     );
   }
+
+  /// Đồ chủ nhà chọn, dạng món báo giá (phòng, tên, số lượng, ghi chú) để nhà thầu điền đơn giá.
+  List<Map<String, dynamic>> get askedItems => [
+        for (final r in rooms)
+          for (final i in r.items) {'room': r.name, 'name': i.name, 'qty': i.qty, 'note': i.note}
+      ];
+
+  /// Tổng số món đồ chủ nhà chọn làm, ở mọi phòng.
+  int get itemCount => rooms.fold(0, (s, r) => s + r.items.fold(0, (t, i) => t + i.qty));
 
   Map<String, dynamic> toJson() => {
         'rooms': [for (final r in rooms) r.toJson()]
@@ -303,3 +341,40 @@ final planTemplates = <String, Plan Function()>{
         ]),
       ]),
 };
+
+/// Một dòng khi so báo giá theo món với đồ chủ nhà chọn. [tag]: 'added' nhà thầu thêm, 'changed' đổi số lượng
+/// (chủ nhà chọn [askedQty]), 'removed' nhà thầu bỏ (không có đơn giá), null giữ nguyên.
+typedef QuoteLine = ({String room, String name, int qty, int? unitPrice, String? note, String? tag, int? askedQty});
+
+/// So khớp theo (phòng, tên món). Món bị bỏ xếp cuối.
+List<QuoteLine> quoteDiff(List<Map<String, dynamic>> asked, List<Map<String, dynamic>> quoted) {
+  String key(Map<String, dynamic> m) => '${m['room']}|${m['name']}';
+  final askedBy = {for (final a in asked) key(a): a};
+  final quotedKeys = quoted.map(key).toSet();
+  return [
+    for (final q in quoted)
+      (
+        room: q['room'] as String,
+        name: q['name'] as String,
+        qty: (q['qty'] as num).toInt(),
+        unitPrice: (q['unit_price'] as num?)?.toInt(),
+        note: q['note'] as String?,
+        tag: askedBy[key(q)] == null
+            ? 'added'
+            : askedBy[key(q)]!['qty'] != q['qty']
+                ? 'changed'
+                : null,
+        askedQty: (askedBy[key(q)]?['qty'] as num?)?.toInt(),
+      ),
+    for (final a in asked.where((a) => !quotedKeys.contains(key(a))))
+      (
+        room: a['room'] as String,
+        name: a['name'] as String,
+        qty: (a['qty'] as num).toInt(),
+        unitPrice: null,
+        note: a['note'] as String?,
+        tag: 'removed',
+        askedQty: (a['qty'] as num).toInt(),
+      ),
+  ];
+}

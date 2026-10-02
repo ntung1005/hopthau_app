@@ -82,6 +82,18 @@ class Api {
   /// API công khai (danh mục, lead).
   Future<dynamic> get(String path) => _send('GET', path, null);
 
+  Future<Map<String, dynamic>>? _meta;
+
+  /// Danh sách tỉnh / thành và hạng mục (GET /meta), tải một lần; lỗi thì lần sau tải lại.
+  Future<Map<String, dynamic>> meta() => _meta ??= () async {
+        try {
+          return await get('/meta') as Map<String, dynamic>;
+        } catch (_) {
+          _meta = null;
+          rethrow;
+        }
+      }();
+
   /// API cần đăng nhập.
   Future<dynamic> getAuth(String path) => _send('GET', path, null, auth: true);
   Future<dynamic> postAuth(String path, [Object? body]) => _send('POST', path, body ?? const {}, auth: true);

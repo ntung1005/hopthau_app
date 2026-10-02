@@ -11,6 +11,7 @@ import '../theme.dart';
 import 'account.dart';
 import 'common.dart';
 import 'jobs.dart';
+import '../measure/model.dart';
 import 'measure.dart';
 
 typedef Json = Map<String, dynamic>;
@@ -60,12 +61,12 @@ class ContractorSignupScreen extends StatelessWidget {
         body: ListView(padding: const EdgeInsets.fromLTRB(24, 0, 24, 32), children: [
           const Illustration(Icons.handyman_outlined),
           const SizedBox(height: 16),
-          Text('Nhận khách từ hàng trăm căn cùng mẫu',
-              style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+          Text('Nhận khách đã tự đo nhà', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
           const SizedBox(height: 8),
           const Text(
-            'Đăng gói cho từng mẫu căn một lần, chủ nhà tự tìm đến. Sau khi đăng ký, đội vận hành gọi xác minh giấy phép '
-            'kinh doanh và xưởng; gói hiển thị với chủ nhà khi hồ sơ đã được xác minh. Miễn phí giai đoạn đầu.',
+            'Chủ nhà gửi bản đo, khu vực và hạng mục cần làm; bạn nhận yêu cầu đúng tỉnh và đúng việc mình làm, báo giá '
+            'sơ bộ ngay trong app. Đội vận hành gọi xác minh giấy phép kinh doanh trước khi gửi khách. Miễn phí giai đoạn đầu.\n'
+            'Đã gửi hồ sơ qua web? Đăng ký bằng đúng số điện thoại đó, hồ sơ tự gắn vào tài khoản.',
             style: TextStyle(color: AppColors.muted),
             textAlign: TextAlign.center,
           ),
@@ -139,7 +140,10 @@ class _ProfileForm extends StatefulWidget {
 class _ProfileFormState extends State<_ProfileForm> {
   late final _name = TextEditingController(text: widget.initial?['name'] as String?);
   late final _address = TextEditingController(text: widget.initial?['address'] as String?);
-  late final _areas = TextEditingController(text: (widget.initial?['areas'] as List?)?.join(', '));
+  late var _areas = {...?(widget.initial?['areas'] as List?)?.cast<String>()};
+  late var _services = {...?(widget.initial?['services'] as List?)?.cast<String>()};
+  late final _years = TextEditingController(text: '${widget.initial?['years_experience'] ?? ''}');
+  late final _website = TextEditingController(text: widget.initial?['website'] as String?);
   late final _styles = TextEditingController(text: (widget.initial?['styles'] as List?)?.join(', '));
   late final _bio = TextEditingController(text: widget.initial?['bio'] as String?);
   final _taxCode = TextEditingController();
@@ -150,7 +154,10 @@ class _ProfileFormState extends State<_ProfileForm> {
     final body = {
       'name': _name.text,
       'address': _address.text,
-      'areas': _splitList(_areas.text),
+      'areas': _areas.toList(),
+      'services': _services.toList(),
+      'years_experience': int.tryParse(_years.text.trim()),
+      'website': _website.text.trim(),
       'styles': _splitList(_styles.text),
       'bio': _bio.text,
       if (_taxCode.text.trim().isNotEmpty) 'tax_code': _taxCode.text.trim(),
@@ -168,38 +175,62 @@ class _ProfileFormState extends State<_ProfileForm> {
   @override
   Widget build(BuildContext context) {
     const gap = SizedBox(height: 12);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      TextField(controller: _name, decoration: const InputDecoration(labelText: 'Tên xưởng / công ty')),
-      gap,
-      TextField(
-        controller: _taxCode,
-        decoration: InputDecoration(
-          labelText: 'Mã số thuế',
-          helperText: widget.initial == null ? 'Để xác minh, không hiển thị với chủ nhà' : 'Để trống nếu không đổi',
+    return Loader<Json>(
+      load: api.meta,
+      builder: (context, meta, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(controller: _name, decoration: const InputDecoration(labelText: 'Tên xưởng / công ty')),
+        gap,
+        TextField(
+          controller: _taxCode,
+          decoration: InputDecoration(
+            labelText: 'Mã số thuế',
+            helperText: widget.initial == null ? 'Để xác minh, không hiển thị với chủ nhà' : 'Để trống nếu không đổi',
+          ),
         ),
-      ),
-      gap,
-      TextField(controller: _address, decoration: const InputDecoration(labelText: 'Địa chỉ xưởng')),
-      gap,
-      TextField(
-        controller: _areas,
-        decoration: const InputDecoration(labelText: 'Khu vực phục vụ', helperText: 'Cách nhau bằng dấu phẩy: Hà Nội, Bắc Ninh'),
-      ),
-      gap,
-      TextField(
-        controller: _styles,
-        decoration: const InputDecoration(labelText: 'Phong cách', helperText: 'Ví dụ: Hiện đại, Japandi, Tối giản'),
-      ),
-      gap,
-      TextField(
-        controller: _bio,
-        decoration: const InputDecoration(labelText: 'Giới thiệu', alignLabelWithHint: true),
-        maxLines: 3,
-        maxLength: 2000,
-      ),
-      const SizedBox(height: 16),
-      FilledButton(onPressed: _busy ? null : _submit, child: Text(widget.submitLabel)),
-    ]);
+        gap,
+        TextField(controller: _address, decoration: const InputDecoration(labelText: 'Địa chỉ xưởng')),
+        gap,
+        TextField(
+          controller: _years,
+          decoration: const InputDecoration(labelText: 'Số năm kinh nghiệm'),
+          keyboardType: TextInputType.number,
+        ),
+        gap,
+        TextField(
+          controller: _website,
+          decoration: const InputDecoration(labelText: 'Fanpage / website', hintText: 'facebook.com/xuong-cua-ban'),
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 20),
+        ChipPicker(
+          label: 'Hạng mục nhận làm',
+          options: (meta['services'] as List).cast<String>(),
+          selected: _services,
+          onChanged: (v) => setState(() => _services = v),
+        ),
+        const SizedBox(height: 20),
+        ChipPicker(
+          label: 'Tỉnh / thành nhận thi công',
+          options: (meta['provinces'] as List).cast<String>(),
+          selected: _areas,
+          onChanged: (v) => setState(() => _areas = v),
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: _styles,
+          decoration: const InputDecoration(labelText: 'Phong cách', helperText: 'Ví dụ: Hiện đại, Japandi, Tối giản'),
+        ),
+        gap,
+        TextField(
+          controller: _bio,
+          decoration: const InputDecoration(labelText: 'Giới thiệu', alignLabelWithHint: true),
+          maxLines: 3,
+          maxLength: 2000,
+        ),
+        const SizedBox(height: 16),
+        FilledButton(onPressed: _busy ? null : _submit, child: Text(widget.submitLabel)),
+      ]),
+    );
   }
 }
 
@@ -276,12 +307,7 @@ class ContractorLeadsScreen extends StatelessWidget {
       );
 }
 
-String _leadPlace(Json request) {
-  final unit = request['unit_type'] as Json?;
-  return unit != null
-      ? '${unit['project']['name']} · ${unit['name']} (${vnDecimal(unit['area_m2'])} m²)'
-      : '${request['address'] ?? ''}';
-}
+String _leadPlace(Json request) => requestPlace(request, withArea: true);
 
 class _LeadCard extends StatelessWidget {
   const _LeadCard({required this.lead, required this.onTap});
@@ -311,8 +337,10 @@ class _LeadCard extends StatelessWidget {
                 Text(
                   [
                     _leadPlace(r),
+                    if (servicesLine(r).isNotEmpty) servicesLine(r),
                     if (r['package'] != null) 'Gói: ${r['package']['name']}',
                     if (r['measurement'] != null) 'Có bản đo nhà',
+                    if (lead['mode'] == 'offline' && lead['status'] != 'sent') 'Bạn đề nghị làm việc trực tiếp',
                     if (lead['price'] != null) 'Bạn báo: ${vnd(lead['price'] as num)}',
                   ].join('\n'),
                   style: const TextStyle(color: AppColors.muted),
@@ -344,27 +372,193 @@ class _LeadScreenState extends State<LeadScreen> {
       TextEditingController(text: widget.lead['price'] == null ? '' : vnDecimal((widget.lead['price'] as num) / 1000000));
   late final _days = TextEditingController(text: '${widget.lead['duration_days'] ?? ''}');
   late final _message = TextEditingController(text: widget.lead['message'] as String?);
+  late var _offline = widget.lead['mode'] == 'offline';
   var _busy = false;
+
+  /// Đồ chủ nhà chọn trong bản đo (để đánh dấu món bạn thêm / bỏ) và tên các phòng.
+  var _asked = <Json>[];
+  var _rooms = <String>[];
+
+  /// Món đang báo: bắt đầu từ báo giá cũ, chưa báo thì từ đồ chủ nhà chọn (đơn giá để trống).
+  final _lines = <_QuoteLineEdit>[];
 
   Json get _request => widget.lead['request'] as Json;
 
+  @override
+  void initState() {
+    super.initState();
+    for (final i in (widget.lead['items'] as List? ?? const []).cast<Json>()) {
+      _lines.add(_QuoteLineEdit.from(i));
+    }
+    _loadMeasurement();
+  }
+
+  Future<void> _loadMeasurement() async {
+    final id = _request['measurement']?['id'] as String?;
+    if (id == null) return;
+    try {
+      final plan = Plan.fromJson((await api.getAuth('/measurements/$id') as Json)['data'] as Json);
+      if (!mounted) return;
+      setState(() {
+        _asked = plan.askedItems;
+        _rooms = [for (final r in plan.rooms) r.name];
+        if (_lines.isEmpty) _lines.addAll(_asked.map(_QuoteLineEdit.from));
+      });
+    } catch (_) {
+      // Không tải được bản đo thì vẫn báo giá trọn gói được.
+    }
+  }
+
+  int? get _total {
+    var sum = 0;
+    for (final l in _lines) {
+      final p = parseMillions(l.price.text);
+      if (p == null) return null;
+      sum += p * l.qty;
+    }
+    return sum;
+  }
+
   Future<void> _submit() async {
-    final price = parseMillions(_price.text);
     final days = int.tryParse(_days.text.trim());
-    if (price == null) return showError(context, const ApiException(400, 'invalid_price'));
-    if (days == null || days <= 0) return showError(context, const ApiException(400, 'invalid_duration_days'));
+    final Map<String, Object?> body;
+    if (_offline) {
+      if (_message.text.trim().isEmpty) return showError(context, const ApiException(400, 'missing_message'));
+      body = {'mode': 'offline', 'message': _message.text, if (days != null) 'duration_days': days};
+    } else {
+      if (days == null || days <= 0) return showError(context, const ApiException(400, 'invalid_duration_days'));
+      if (_lines.isEmpty) {
+        final price = parseMillions(_price.text);
+        if (price == null) return showError(context, const ApiException(400, 'invalid_price'));
+        body = {'mode': 'in_app', 'price': price, 'duration_days': days, 'message': _message.text};
+      } else {
+        if (_total == null) return showError(context, const ApiException(400, 'invalid_price'));
+        body = {
+          'mode': 'in_app',
+          'duration_days': days,
+          'message': _message.text,
+          'items': [for (final l in _lines) l.toJson()],
+        };
+      }
+    }
     setState(() => _busy = true);
     try {
-      await api.postAuth(
-          '/contractor/leads/${_request['id']}/quote', {'price': price, 'duration_days': days, 'message': _message.text});
+      await api.postAuth('/contractor/leads/${_request['id']}/quote', body);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gửi báo giá cho chủ nhà')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_offline ? 'Đã gửi đề nghị làm việc trực tiếp' : 'Đã gửi báo giá cho chủ nhà')));
       Navigator.pop(context);
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _addLine([Json? restore]) async {
+    if (restore != null) return setState(() => _lines.add(_QuoteLineEdit.from(restore)));
+    final rooms = [..._rooms, 'Chung'];
+    var room = rooms.first;
+    final name = TextEditingController(), note = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Đề xuất thêm món'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(
+            initialValue: room,
+            decoration: const InputDecoration(labelText: 'Phòng'),
+            items: [for (final r in rooms) DropdownMenuItem(value: r, child: Text(r))],
+            onChanged: (v) => room = v ?? room,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: name,
+            autofocus: true,
+            maxLength: 50,
+            decoration: const InputDecoration(labelText: 'Tên món', hintText: 'Ví dụ: Nhân công lắp đặt'),
+          ),
+          TextField(controller: note, maxLength: 100, decoration: const InputDecoration(labelText: 'Ghi chú')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Huỷ')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Thêm')),
+        ],
+      ),
+    );
+    if (ok != true || name.text.trim().isEmpty) return;
+    setState(() => _lines.add(_QuoteLineEdit(room, name.text.trim(), 1, note.text.trim().isEmpty ? null : note.text.trim())));
+  }
+
+  Widget _itemEditor() {
+    final diff = quoteDiff(_asked, [for (final l in _lines) l.toJson()]);
+    final total = _total;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Text('Sửa số lượng, bỏ hoặc đề xuất thêm món; nhập đơn giá từng món. Tổng giá tự cộng.',
+          style: TextStyle(color: AppColors.muted, fontSize: 13)),
+      const SizedBox(height: 8),
+      for (final (i, l) in _lines.indexed)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(l.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text([l.room, if (l.note != null) l.note].join(' · '),
+                      style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                  if (diff[i].tag == 'added') const Pill('Bạn đề xuất thêm', color: AppColors.success),
+                  if (diff[i].tag == 'changed') Pill('Khách chọn ${diff[i].askedQty}', color: AppColors.accent),
+                ]),
+              ),
+              IconButton(
+                tooltip: l.qty > 1 ? 'Bớt' : 'Bỏ món',
+                icon: Icon(l.qty > 1 ? Icons.remove_circle_outline : Icons.delete_outline),
+                onPressed: () => setState(() => l.qty > 1 ? l.qty-- : _lines.remove(l)),
+              ),
+              Text('${l.qty}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              IconButton(
+                tooltip: 'Thêm',
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: l.qty >= 99 ? null : () => setState(() => l.qty++),
+              ),
+              SizedBox(
+                width: 96,
+                child: TextField(
+                  controller: l.price,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: 'Giá', suffixText: 'tr', isDense: true),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      for (final d in diff.where((d) => d.tag == 'removed'))
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text('${d.name} × ${d.qty}',
+              style: const TextStyle(decoration: TextDecoration.lineThrough, color: AppColors.muted)),
+          subtitle: Text('${d.room} · khách chọn, bạn đã bỏ'),
+          trailing: TextButton(
+            onPressed: () => _addLine({'room': d.room, 'name': d.name, 'qty': d.qty, 'note': d.note}),
+            child: const Text('Thêm lại'),
+          ),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(onPressed: () => _addLine(), icon: const Icon(Icons.add), label: const Text('Đề xuất thêm món')),
+      ),
+      InfoPanel(children: [
+        Row(children: [
+          const Text('Tổng báo giá', style: TextStyle(color: AppColors.muted)),
+          const Spacer(),
+          Text(total == null ? 'Nhập đủ đơn giá' : vnd(total),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.primary)),
+        ]),
+      ]),
+    ]);
   }
 
   @override
@@ -383,6 +577,7 @@ class _LeadScreenState extends State<LeadScreen> {
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(_leadPlace(r), style: const TextStyle(color: AppColors.muted)),
+          if (servicesLine(r).isNotEmpty) Text(servicesLine(r), style: const TextStyle(color: AppColors.muted)),
           if (r['package'] != null) Text('Gói: ${r['package']['name']}', style: const TextStyle(color: AppColors.muted)),
           if (r['budget'] != null) Text('Ngân sách ${vnd(r['budget'] as num)}', style: const TextStyle(color: AppColors.muted)),
           if ((r['note'] as String?)?.isNotEmpty ?? false) ...[const SizedBox(height: 6), Text('${r['note']}')],
@@ -396,7 +591,7 @@ class _LeadScreenState extends State<LeadScreen> {
             child: ListTile(
               leading: const IconBadge(Icons.view_in_ar, size: 40),
               title: const Text('Khách đã tự đo nhà', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Xem mặt bằng, khung 3D, diện tích sàn và tường để báo giá sơ bộ'),
+              subtitle: Text('Mặt bằng, khung 3D, diện tích${_asked.isEmpty ? '' : ', ${_asked.length} món đồ khách chọn'}'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => MeasurementViewerScreen.open(context, r['measurement']['id'] as String),
             ),
@@ -417,39 +612,83 @@ class _LeadScreenState extends State<LeadScreen> {
         ] else if (lead['status'] != 'declined')
           const Padding(
             padding: EdgeInsets.only(top: 12),
-            child: Text('Số điện thoại của khách hiện khi khách chọn báo giá của bạn.',
-                style: TextStyle(color: AppColors.muted, fontSize: 13)),
+            child:
+                Text('Số điện thoại của khách hiện khi khách chọn bạn.', style: TextStyle(color: AppColors.muted, fontSize: 13)),
           ),
         if (canQuote) ...[
-          SectionTitle(lead['status'] == 'quoted' ? 'Sửa báo giá' : 'Gửi báo giá'),
-          TextField(
-            controller: _price,
-            decoration: const InputDecoration(labelText: 'Giá trọn gói (triệu đồng)', prefixIcon: Icon(Icons.payments_outlined)),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          SectionTitle(lead['status'] == 'quoted' ? 'Sửa trả lời' : 'Trả lời khách'),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Báo giá trong app'), icon: Icon(Icons.request_quote_outlined)),
+              ButtonSegment(value: true, label: Text('Làm việc trực tiếp'), icon: Icon(Icons.handshake_outlined)),
+            ],
+            selected: {_offline},
+            onSelectionChanged: (s) => setState(() => _offline = s.first),
           ),
+          gap,
+          if (_offline)
+            const Text(
+                'Bạn và khách tự gặp, khảo sát và thoả thuận giá bên ngoài. Nếu khách chọn bạn, hai bên thấy số điện thoại; '
+                'app chỉ theo dõi tiến độ 4 mốc (báo xong kèm ảnh, khách nghiệm thu), không ghi nhận tiền.',
+                style: TextStyle(color: AppColors.muted, fontSize: 13))
+          else if (_lines.isNotEmpty || _asked.isNotEmpty)
+            _itemEditor()
+          else
+            TextField(
+              controller: _price,
+              decoration:
+                  const InputDecoration(labelText: 'Giá trọn gói (triệu đồng)', prefixIcon: Icon(Icons.payments_outlined)),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
           gap,
           TextField(
             controller: _days,
-            decoration: const InputDecoration(labelText: 'Số ngày thi công', prefixIcon: Icon(Icons.schedule_outlined)),
+            decoration: InputDecoration(
+              labelText: 'Số ngày thi công',
+              helperText: _offline ? 'Không bắt buộc' : null,
+              prefixIcon: const Icon(Icons.schedule_outlined),
+            ),
             keyboardType: TextInputType.number,
           ),
           gap,
           TextField(
             controller: _message,
-            decoration: const InputDecoration(
-              labelText: 'Lời nhắn cho khách',
-              hintText: 'Lịch khảo sát, vật liệu đề xuất, điều kiện thanh toán...',
+            decoration: InputDecoration(
+              labelText: _offline ? 'Lời nhắn cho khách (bắt buộc)' : 'Lời nhắn cho khách',
+              hintText:
+                  _offline ? 'Lịch hẹn khảo sát, cách làm việc...' : 'Lịch khảo sát, vật liệu đề xuất, điều kiện thanh toán...',
               alignLabelWithHint: true,
             ),
             maxLines: 4,
             maxLength: 2000,
           ),
           const SizedBox(height: 8),
-          FilledButton(onPressed: _busy ? null : _submit, child: const Text('Gửi báo giá')),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: Text(_offline ? 'Gửi đề nghị làm việc trực tiếp' : 'Gửi báo giá'),
+          ),
         ],
       ]),
     );
   }
+}
+
+/// Một món đang sửa trong báo giá; đơn giá nhập theo triệu đồng.
+class _QuoteLineEdit {
+  _QuoteLineEdit(this.room, this.name, this.qty, this.note, [int? unitPrice])
+      : price = TextEditingController(text: unitPrice == null || unitPrice == 0 ? '' : vnDecimal(unitPrice / 1000000));
+
+  factory _QuoteLineEdit.from(Json j) => _QuoteLineEdit(j['room'] as String? ?? 'Chung', j['name'] as String,
+      (j['qty'] as num? ?? 1).toInt(), j['note'] as String?, (j['unit_price'] as num?)?.toInt());
+
+  final String room;
+  final String name;
+  int qty;
+  final String? note;
+  final TextEditingController price;
+
+  Json toJson() =>
+      {'room': room, 'name': name, 'qty': qty, 'unit_price': parseMillions(price.text) ?? 0, if (note != null) 'note': note};
 }
 
 // Gói của tôi ---------------------------------------------------------------------

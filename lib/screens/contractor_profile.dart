@@ -44,6 +44,16 @@ class ContractorProfileScreen extends StatelessWidget {
                   for (final s in (c['styles'] as List).cast<String>()) Pill(s),
                   for (final a in (c['areas'] as List).cast<String>()) Pill(a),
                 ]),
+                if (servicesLine(c, 'Nhận làm').isNotEmpty || c['years_experience'] != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    [
+                      if (c['years_experience'] != null) '${c['years_experience']} năm kinh nghiệm',
+                      servicesLine(c, 'Nhận làm'),
+                    ].where((s) => s.isNotEmpty).join(' · '),
+                    style: const TextStyle(color: AppColors.muted),
+                  ),
+                ],
               ]),
               const SizedBox(height: 12),
               Card(
