@@ -1,54 +1,38 @@
-# Hợp Thầu app
+# Hợp Thầu app (Next.js)
 
-Một app cho cả chủ nhà và nhà thầu, tách thành **hai chế độ**, mỗi chế độ một bộ tab (không lẫn tính năng). Chỉ gọi REST API của [hopthau_be](../hopthau_be).
-
-| Chế độ | Tab | Nút giữa |
-|---|---|---|
-| Chủ nhà (mặc định) | Khám phá · Yêu cầu · Công trình · Tài khoản | Đo nhà |
-| Nhà thầu | Khách hàng · Công trình · Gói của tôi · Tài khoản | Tạo gói |
-
-Đăng ký làm nhà thầu và chuyển chế độ đều ở tab **Tài khoản**. Tài khoản có vai trò nhà thầu mở app sẽ vào chế độ nhà thầu (nhớ lựa chọn lần trước).
-
-- **Chủ nhà:** tìm dự án (không cần gõ dấu) → mẫu căn (giá "từ") → so sánh tối đa 3 gói (tô ô tốt nhất) → xem hạng mục, chọn tuỳ chọn → nhận tư vấn. Nút + ở giữa: yêu cầu theo địa chỉ. Tab Yêu cầu: xem báo giá, chọn nhà thầu, thấy số điện thoại sau khi chọn.
-- **Nhà thầu (chế độ nhà thầu):** đăng ký hồ sơ, tạo và sửa gói (hạng mục, đơn giá, tuỳ chọn, ảnh), gửi duyệt; khách hàng được ghép, gửi báo giá; công trình.
-- **Công trình (cả hai bên):** 4 mốc trên dòng thời gian, báo xong kèm ảnh / nghiệm thu / trả lại, xác nhận nhận tiền, phát sinh cần chủ nhà đồng ý, bảo hành, đánh giá và trả lời.
-- **Tự đo nhà:** bắt đầu từ mẫu (căn 1PN, 2PN, một phòng), nhập rộng / dài / cao từng phòng và cửa đi, cửa sổ trên từng tường; cắt góc phòng (cắt vuông cho cột, hộp kỹ thuật; cắt chéo cho góc vát) có xem trước, diện tích và chu vi tính theo đa giác; kéo thả xếp phòng (tự hít vào mép phòng bên cạnh). App vẽ mặt bằng 2D có kích thước và khung 3D xoay được (kéo để xoay / nghiêng, chụm hoặc cuộn chuột để phóng to, nút xoay 90°, chạm đúp để đặt lại), tính diện tích sàn, tường trừ cửa. Gửi kèm yêu cầu báo giá; nhà thầu mở ra xem 2D / 3D và bảng khối lượng từng phòng. Có hướng dẫn cách đo. Đo bằng camera (AR) để dành cho bản native.
-- **Trang chủ:** tìm dự án, lối tắt (tự đo nhà, xin báo giá, công trình, cách đo), banner đo nhà, dự án có giá "từ", gói nổi bật có ảnh, căn đã làm thực tế, vì sao chọn Hợp Thầu. Nút giữa thanh điều hướng mở đo nhà.
-- **Tin cậy:** hồ sơ nhà thầu công khai (điểm, số căn đã bàn giao, đánh giá), "Căn đã làm thực tế" theo mẫu căn, ảnh gói. Tài khoản: xoá tài khoản.
+Bản web Next.js của [hopthau_app](../hopthau_app) (Flutter), đủ tính năng cho cả chủ nhà và nhà thầu. Chạy hoàn toàn trên trình duyệt, chỉ gọi REST API của [hopthau_be](../hopthau_be) (phiên đăng nhập lưu ở localStorage, tự làm mới token).
 
 ## Chạy
 
 ```bash
-./scripts/setup.sh           # lần đầu: tạo android/ios/web, pub get
-flutter run -d chrome        # mặc định gọi BE ở 127.0.0.1:8788 (máy ảo Android: 10.0.2.2:8788)
-flutter test
+npm install
+npm run dev          # http://localhost:3001 (3000 là hopthau_web)
+npm test             # kiểm tra mô hình bản đo + định dạng (node --test)
+npm run build
 ```
 
-Đổi BE: `--dart-define=API_URL=...` hoặc `--dart-define-from-file=env/local.json` (mẫu: [env/local.example.json](env/local.example.json)).
+BE mặc định `http://127.0.0.1:8788`; đổi bằng `NEXT_PUBLIC_API_URL` (mẫu: [.env.example](.env.example)). BE cần `CORS_ORIGIN` cho phép (mặc định `*`).
+
+## Màn hình ↔ đường dẫn
+
+| Chế độ | Tab | Đường dẫn |
+|---|---|---|
+| Chủ nhà | Khám phá · Yêu cầu · [Đo nhà] · Công trình · Tài khoản | `/` · `/yeu-cau` · `/do-nha` · `/cong-trinh` · `/tai-khoan` |
+| Nhà thầu | Khách hàng · Công trình · [Tạo gói] · Gói của tôi · Tài khoản | `/khach-hang` · `/cong-trinh` · `/goi-cua-toi/moi` · `/goi-cua-toi` · `/tai-khoan` |
+
+Màn chi tiết: `/du-an/[slug]` → `/du-an/[slug]/[unitId]` (danh sách gói) → `/so-sanh?unit=&ids=` · `/goi/[id]` · `/nha-thau/[id]` · `/yeu-cau/moi?unit=&package=&measurement=` · `/yeu-cau/[id]` · `/cong-trinh/[id]` · `/khach-hang/[requestId]` · `/goi-cua-toi/[id]` · `/do-nha/[id]` (trình dựng; `moi` = bản nháp) · `/ban-do/[id]` (xem bản đo) · `/dang-nhap?next=` · `/tai-khoan/dang-ky-nha-thau` · `/tai-khoan/ho-so-nha-thau`.
 
 ## Source
 
-| File | Nội dung |
+| File | Nội dung (tương ứng bên Flutter) |
 |---|---|
-| [lib/api.dart](lib/api.dart) | Client REST: phiên đăng nhập (lưu `shared_preferences`), tự làm mới token |
-| [lib/screens/catalog.dart](lib/screens/catalog.dart) | Dự án, mẫu căn, danh sách gói, so sánh, chi tiết gói |
-| [lib/screens/requests.dart](lib/screens/requests.dart) | Gửi yêu cầu, yêu cầu của tôi, chi tiết và chọn báo giá |
-| [lib/screens/contractor.dart](lib/screens/contractor.dart) | Khu vực nhà thầu: hồ sơ, khách hàng, báo giá, trình soạn gói |
-| [lib/screens/jobs.dart](lib/screens/jobs.dart) | Công trình: mốc, phát sinh, đánh giá (cả hai vai trò) |
-| [lib/screens/contractor_profile.dart](lib/screens/contractor_profile.dart) | Hồ sơ nhà thầu công khai |
-| [lib/screens/home.dart](lib/screens/home.dart) | Trang chủ |
-| [lib/screens/measure.dart](lib/screens/measure.dart) | Đo nhà: danh sách, trình dựng, màn xem cho nhà thầu, hướng dẫn |
-| [lib/measure/model.dart](lib/measure/model.dart), [painters.dart](lib/measure/painters.dart) | Mô hình bản đo (cùng công thức với BE), vẽ mặt bằng 2D và khung 3D |
-| [lib/photos.dart](lib/photos.dart) | Chọn và upload ảnh (`image_picker` → URL ký sẵn của BE), lưới ảnh |
-| [lib/screens/account.dart](lib/screens/account.dart) | Đăng nhập / đăng ký, tab Tài khoản, xoá tài khoản |
-| [lib/screens/common.dart](lib/screens/common.dart) | Widget dùng chung: `Loader`, `RowCard`, `Pill`, `EmptyState`, `InfoPanel`, `PhoneRow` |
-| [lib/theme.dart](lib/theme.dart) | Design tokens (màu, bo góc), theme Material, widget dùng chung: `IconBadge`, `Illustration`, `ContractorLine` |
-| [lib/format.dart](lib/format.dart) | Định dạng tiền, ngày, câu báo lỗi |
+| [src/lib/api.ts](src/lib/api.ts) | Client REST, phiên, upload ảnh (nén trước khi gửi) — `api.dart`, `photos.dart` |
+| [src/lib/format.ts](src/lib/format.ts) | Tiền, ngày, câu báo lỗi — `format.dart` |
+| [src/lib/measure.ts](src/lib/measure.ts) | Mô hình bản đo, cùng công thức với BE — `measure/model.dart` |
+| [src/lib/draw.ts](src/lib/draw.ts) | Vẽ mặt bằng 2D và khung 3D lên canvas — `measure/painters.dart` |
+| [src/ui/app.tsx](src/ui/app.tsx) | Tài khoản, chế độ chủ nhà / nhà thầu, thông báo, `useLoad` — `app_state.dart` |
+| [src/ui/shell.tsx](src/ui/shell.tsx) | Thanh tab + nút giữa theo chế độ — `main.dart` |
+| [src/ui/kit.tsx](src/ui/kit.tsx), [shared.tsx](src/ui/shared.tsx), [plan-canvas.tsx](src/ui/plan-canvas.tsx) | Thành phần dùng chung — `common.dart`, `theme.dart` |
+| [src/app/**/page.tsx](src/app) | Mỗi màn một trang |
 
-## Giao diện
-
-Theo UI kit [Coinpay (Figma community)](https://www.figma.com/design/gbyujmfMTix7m5PBOmVVgH/Coinpay-Fintech-Finance-Mobile-App-UI-kit--Community---Community-?node-id=142-3631): xanh royal `#304FFE`, nền trắng, nút bo tròn cao 56, ô nhập nền xám nhạt, card bo 16, header xanh bo góc dưới, bottom nav có nút giữa nổi (gửi yêu cầu báo giá).
-
-Token hiện lấy từ ảnh chụp của kit. Khi đọc được file Figma, chỉ cần sửa `AppColors` / `AppRadius` trong `theme.dart`. Minh hoạ đang dùng icon trên vòng tròn đồng tâm (`Illustration`); thay bằng ảnh line-art xuất từ kit khi có asset. Font đang là font hệ thống.
-
-Chưa dùng state management hay router riêng: màn hình ít, `Navigator` + `FutureBuilder` là đủ. Thêm Riverpod / go_router khi có vai trò nhà thầu và deep link.
+Khác bản Flutter: hộp xác nhận / đổi tên dùng `confirm` / `prompt` của trình duyệt; số điện thoại bấm để gọi (`tel:`); bảng thông số trong trình dựng bản đo thu gọn bằng nút thay cho kéo.
